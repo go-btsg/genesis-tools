@@ -1,17 +1,20 @@
 package cmd
 
 import (
-	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"sort"
+	"time"
 
 	"github.com/cosmos/cosmos-sdk/client"
+	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
+	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	"github.com/cosmos/cosmos-sdk/server"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+	"github.com/cosmos/cosmos-sdk/x/staking/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	"github.com/spf13/cobra"
 	tmjson "github.com/tendermint/tendermint/libs/json"
@@ -72,15 +75,18 @@ func getGenStateFromPath(genesisFilePath string) (map[string]json.RawMessage, er
 	return genState, nil
 }
 
-func ExportStakedBalancesCmd() *cobra.Command {
+func ExportUpgradedGenesisCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "export-staked-balances [input-genesis-file] [staked-snapshot-csv]",
-		Short: "Export staked balances from a provided genesis export",
-		Long: `Export staked balances from a provided genesis export
+		Use:   "export-upgraded-genesis [input-genesis-file] [new_val_owner] [new_val_operator] [new_val_pubkey_json] [output-genesis-file]",
+		Short: "Export upgraded genesis from a provided genesis export",
+		Long: `Export upgraded genesis from a provided genesis export
 Example:
-	bitsongd export-staked-balances bitsong_export.json btsg-staked-snapshot.csv
+	bitsongd export-upgraded-genesis bitsong_export.json bitsong1ws92lwks8xuw9wwlt0w7jrzee8raggc4u9pyrz \
+		bitsongvaloper1ws92lwks8xuw9wwlt0w7jrzee8raggc4apadnl  \
+		'{"@type":"/cosmos.crypto.ed25519.PubKey","key":"5Fujs6ObfVSQPZUXlu/DkO0Lv5yjunyoGjmJzi8Sf8k="}' \
+		new-bitsong-genesis.json
 `,
-		Args: cobra.ExactArgs(2),
+		Args: cobra.ExactArgs(5),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			clientCtx := client.GetClientContextFromCmd(cmd)
 			serverCtx := server.GetServerContextFromCmd(cmd)
@@ -88,11 +94,14 @@ Example:
 			config.SetRoot(clientCtx.HomeDir)
 
 			genesisFile := args[0]
+			newValOwner := args[1]
+			newValOperator := args[2]
+			newValPubKey := args[3]
+			newGenesisOutput := args[4]
 			genState, err := getGenStateFromPath(genesisFile)
 			if err != nil {
 				return err
 			}
-			stakeSnapshotOutput := args[1]
 
 			authGenesis := authtypes.GenesisState{}
 			clientCtx.JSONCodec.MustUnmarshalJSON(genState["auth"], &authGenesis)
@@ -102,33 +111,49 @@ Example:
 			}
 			accounts = authtypes.SanitizeGenesisAccounts(accounts)
 
+			// TODO: add new account into auth.Accounts
+			// TODO: add balances object into bank.Balances
+			// TODO: think of removing genutil.GenTxs
+			// TODO: try starting the chain with new genesis
+
 			// Produce the map of address to total atom balance, both staked and UnbondingStake
 			snapshotAccs := make(map[string]DerivedAccount)
 
 			stakingGenesis := stakingtypes.GenesisState{}
 			clientCtx.JSONCodec.MustUnmarshalJSON(genState["staking"], &stakingGenesis)
 
-			// Make a map from validator operator address to the v036 validator type
-			validators := make(map[string]stakingtypes.Validator)
-			for _, validator := range stakingGenesis.Validators {
-				validators[validator.OperatorAddress] = validator
+			var pubKey cryptotypes.PubKey
+			if err := clientCtx.Codec.UnmarshalInterfaceJSON([]byte(newValPubKey), &pubKey); err != nil {
+				panic(err)
 			}
 
-			for _, delegation := range stakingGenesis.Delegations {
-				address := delegation.DelegatorAddress
-
-				acc, ok := snapshotAccs[address]
-				if !ok {
-					acc = newDerivedAccount(address)
+			var pkAny *codectypes.Any
+			if pubKey != nil {
+				var err error
+				if pkAny, err = codectypes.NewAnyWithValue(pubKey); err != nil {
+					panic(err)
 				}
-
-				val := validators[delegation.ValidatorAddress]
-				stakedOsmos := delegation.Shares.MulInt(val.Tokens).Quo(val.DelegatorShares).RoundInt()
-
-				acc.Staked = acc.Staked.Add(stakedOsmos)
-
-				snapshotAccs[address] = acc
 			}
+
+			stakingGenesis.Validators = []stakingtypes.Validator{{
+				OperatorAddress:   newValOperator,
+				ConsensusPubkey:   pkAny,
+				Jailed:            false,
+				Status:            stakingtypes.Bonded,
+				Tokens:            sdk.NewInt(100000000),
+				DelegatorShares:   sdk.NewDec(100000000),
+				Description:       stakingtypes.NewDescription("moniker1", "", "", "", ""),
+				UnbondingHeight:   0,
+				UnbondingTime:     time.Time{},
+				Commission:        types.NewCommission(sdk.NewDecWithPrec(1, 2), sdk.NewDecWithPrec(10, 2), sdk.NewDecWithPrec(1, 2)),
+				MinSelfDelegation: sdk.NewInt(1),
+			}}
+
+			stakingGenesis.Delegations = []stakingtypes.Delegation{{
+				DelegatorAddress: newValOwner,
+				ValidatorAddress: newValOperator,
+				Shares:           sdk.NewDec(100000000),
+			}}
 
 			assetInfo := map[string]AssetInfo{
 				"ubtsg": {
@@ -160,22 +185,13 @@ Example:
 			fmt.Printf("# accounts: staked=%d,\n", len(stakedAccs))
 
 			// export snapshot json
-			f, err := os.Create(stakeSnapshotOutput)
+			f, err := os.Create(newGenesisOutput)
 			defer f.Close()
 
 			if err != nil {
 				return fmt.Errorf("failed to open file: %w", err)
 			}
 
-			var records = [][]string{{"address", "staked_value", "usd_value"}}
-			for _, acc := range stakedAccs {
-				records = append(records, []string{
-					acc.Address, acc.Staked.String(), acc.UsdValue.String(),
-				})
-			}
-
-			w := csv.NewWriter(f)
-			err = w.WriteAll(records)
 			return err
 		},
 	}
