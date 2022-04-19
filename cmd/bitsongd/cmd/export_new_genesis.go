@@ -14,6 +14,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/server"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"github.com/cosmos/cosmos-sdk/x/staking/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	"github.com/spf13/cobra"
@@ -111,8 +112,31 @@ Example:
 			}
 			accounts = authtypes.SanitizeGenesisAccounts(accounts)
 
-			// TODO: add new account into auth.Accounts
-			// TODO: add balances object into bank.Balances
+			// add new account into auth.Accounts
+			accValOwner, err := sdk.AccAddressFromBech32(newValOwner)
+			if err != nil {
+				return err
+			}
+			accounts = append(accounts, authtypes.NewBaseAccount(accValOwner, nil, 0, 0))
+
+			packedAccs, err := authtypes.PackAccounts(accounts)
+			if err != nil {
+				return err
+			}
+			authGenesis.Accounts = packedAccs
+			authGenesisBz := clientCtx.JSONCodec.MustMarshalJSON(&authGenesis)
+			genState["auth"] = authGenesisBz
+
+			// add balances object into bank.Balances
+			bankGenesis := banktypes.GenesisState{}
+			clientCtx.JSONCodec.MustUnmarshalJSON(genState["bank"], &bankGenesis)
+			bankGenesis.Balances = append(bankGenesis.Balances, banktypes.Balance{
+				Address: newValOwner,
+				Coins:   sdk.NewCoins(sdk.NewInt64Coin("ubtsg", 1000_000_000)),
+			})
+			bankGenesisBz := clientCtx.JSONCodec.MustMarshalJSON(&bankGenesis)
+			genState["bank"] = bankGenesisBz
+
 			// TODO: think of removing genutil.GenTxs
 			// TODO: try starting the chain with new genesis
 
