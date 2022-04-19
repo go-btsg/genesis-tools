@@ -82,10 +82,7 @@ func ExportUpgradedGenesisCmd() *cobra.Command {
 		Short: "Export upgraded genesis from a provided genesis export",
 		Long: `Export upgraded genesis from a provided genesis export
 Example:
-	bitsongd export-upgraded-genesis bitsong_export.json bitsong1ws92lwks8xuw9wwlt0w7jrzee8raggc4u9pyrz \
-		bitsongvaloper1ws92lwks8xuw9wwlt0w7jrzee8raggc4apadnl  \
-		'{"@type":"/cosmos.crypto.ed25519.PubKey","key":"5Fujs6ObfVSQPZUXlu/DkO0Lv5yjunyoGjmJzi8Sf8k="}' \
-		new-bitsong-genesis.json
+	bitsongd export-upgraded-genesis bitsong_export.json bitsong1ws92lwks8xuw9wwlt0w7jrzee8raggc4u9pyrz bitsongvaloper1ws92lwks8xuw9wwlt0w7jrzee8raggc4apadnl '{"@type":"/cosmos.crypto.ed25519.PubKey","key":"5Fujs6ObfVSQPZUXlu/DkO0Lv5yjunyoGjmJzi8Sf8k="}' new-bitsong-genesis.json
 `,
 		Args: cobra.ExactArgs(5),
 		RunE: func(cmd *cobra.Command, args []string) error {
