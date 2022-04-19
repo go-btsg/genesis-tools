@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"sort"
 	"time"
 
 	"github.com/cosmos/cosmos-sdk/client"
@@ -37,19 +36,6 @@ type AssetInfo struct {
 	denom   string
 	price   sdk.Dec
 	decimal int64
-}
-
-// DerivedAccount provide fields of snapshot per account
-type DerivedAccount struct {
-	Address string  `json:"address"`
-	Staked  sdk.Int `json:"staked"`
-}
-
-func newDerivedAccount(address string) DerivedAccount {
-	return DerivedAccount{
-		Address: address,
-		Staked:  sdk.ZeroInt(),
-	}
 }
 
 func getGenStateFromPath(genesisFilePath string) (map[string]json.RawMessage, error) {
@@ -137,9 +123,6 @@ Example:
 			// TODO: think of removing genutil.GenTxs
 			// TODO: try starting the chain with new genesis
 
-			// Produce the map of address to total atom balance, both staked and UnbondingStake
-			snapshotAccs := make(map[string]DerivedAccount)
-
 			stakingGenesis := stakingtypes.GenesisState{}
 			clientCtx.JSONCodec.MustUnmarshalJSON(genState["staking"], &stakingGenesis)
 
@@ -176,34 +159,8 @@ Example:
 				Shares:           sdk.NewDec(100000000),
 			}}
 
-			assetInfo := map[string]AssetInfo{
-				"ubtsg": {
-					denom:   "btsg",
-					decimal: 6,
-					price:   sdk.NewDecWithPrec(1251, 4), // 0.1251
-				},
-			}
-			_ = assetInfo
-
-			stakedAccs := []StakedAccount{}
-			for addr, account := range snapshotAccs {
-				if account.Staked.GTE(sdk.NewInt(400_000_000)) { // >= 400 btsg
-					info := assetInfo["ubtsg"]
-					decimalPow := sdk.NewDec(10).Power(uint64(info.decimal))
-					usdValue := info.price.Mul(account.Staked.ToDec()).Quo(decimalPow)
-					stakedAccs = append(stakedAccs, StakedAccount{
-						Address:  addr,
-						Staked:   account.Staked,
-						UsdValue: usdValue.RoundInt(),
-					})
-				}
-			}
-
-			sort.SliceStable(stakedAccs, func(i, j int) bool {
-				return stakedAccs[i].Staked.GT(stakedAccs[j].Staked)
-			})
-
-			fmt.Printf("# accounts: staked=%d,\n", len(stakedAccs))
+			stakingGenesisBz := clientCtx.JSONCodec.MustMarshalJSON(&stakingGenesis)
+			genState["staking"] = stakingGenesisBz
 
 			// export snapshot json
 			f, err := os.Create(newGenesisOutput)
