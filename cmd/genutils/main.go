@@ -3,9 +3,9 @@ package main
 import (
 	"os"
 
-	"github.com/bitsongofficial/go-bitsong/app"
-	"github.com/bitsongofficial/go-bitsong/cmd/bitsongd/cmd"
 	svrcmd "github.com/cosmos/cosmos-sdk/server/cmd"
+	"github.com/go-btsg/genutils/app"
+	"github.com/go-btsg/genutils/cmd/genutils/cmd"
 )
 
 func main() {

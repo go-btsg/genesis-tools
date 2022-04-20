@@ -1,4 +1,4 @@
-module github.com/bitsongofficial/go-bitsong
+module github.com/go-btsg/genutils
 
 go 1.17
 
